@@ -1,0 +1,198 @@
+{
+  "status": "passed",
+  "scope": "real nuScenes dataset + tiny integrated CPU DiT; no checkpoint load",
+  "config_parse": {
+    "profile": "configs/experimental/object_availability/pilot_profile.json",
+    "experiment_modes": {
+      "A": "clean",
+      "B": "temporary_unavailable",
+      "C": "explicit_absent"
+    }
+  },
+  "dataset": {
+    "root": "/home/nvidia/Datasets/nuscenes",
+    "dataset_name": "v1.0-trainval",
+    "split": "mini_train",
+    "dataset_item_count": 227,
+    "selected_record": {
+      "base_index": 0,
+      "target_instance_token": "c08be936e0394352b11760ede982d6fd",
+      "target_instance_hash": 4618371944058385905,
+      "target_category": "human.pedestrian.adult",
+      "target_class_id": 1,
+      "missing_start": 3,
+      "missing_duration": 5,
+      "missing_end_exclusive": 8,
+      "min_observed_before": 3,
+      "min_observed_after": 2,
+      "pair_seed": 0
+    },
+    "changed_interval_frames": [
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "default_clean_layout_unchanged": true,
+    "clean_layout_hashes": [
+      "c9bdfed8a5859a8ddd2909b9c236dedbb72b507b1ea4d7a3b420b66c62167452",
+      "1fa59bf0234ed48578b4b32fec47f5bfa6c5a83cbf1621a385e1634ae3015cae",
+      "aeb0a91259c85020096c1ab89d75af678d997bbc8fb9eaf1ea21fe21b3dbf83c",
+      "43b11024d0dd2d74244ec61f42095912217ae6a5c18cc4a355f8e1906aa257f8",
+      "62d44d489ed1ae3a90e2572ec58124a29535b0fb375e030a1cded0580b34d06c",
+      "bf0c0edaba6664aed40a979d2415577958ddd187c054c0983a67463d7847a352",
+      "6f0ce0629719fa80e1b3a45c861bd393ada640b8e3b0990120d0a76124f7ddd7",
+      "411f1758c82211075342f589af27a1ea9048e9dd3b9bedfc2fd9a5bbfc03cb0e",
+      "9d8148f9918c2f79d41c8d8a0f4f2c52251d27d8c5046352b945c2d74993dbef",
+      "76826fd901011acd106f10b5e12ac87b0a0e722c0e5458fdc4d619847daad3bc",
+      "caa8c5141fa588791c09edbf11f4193b77bdbdd58359ce8b4e51afe6fa51781e",
+      "f20d147ea837e38aad5560872287fe3ee5c07bc3e2f5e9b3fbaa73b5a6b01dda",
+      "e5b1b56b794669c2decadf778b51224b94ad2f61ed0c980d9529106dbba11d7d"
+    ],
+    "temporary_unavailable_layout_hashes": [
+      "c9bdfed8a5859a8ddd2909b9c236dedbb72b507b1ea4d7a3b420b66c62167452",
+      "1fa59bf0234ed48578b4b32fec47f5bfa6c5a83cbf1621a385e1634ae3015cae",
+      "aeb0a91259c85020096c1ab89d75af678d997bbc8fb9eaf1ea21fe21b3dbf83c",
+      "cf78e3706b17d69bb01f6dd28aa830ef01bb28b1571edbf53052e46901ff391c",
+      "3f769190657cbdea73a4da38d252debdece054a9b3f0e92de26f966278aa744c",
+      "b08f573cb2183993c5a7ad1a8d8bd5ea94dc616bb3b2c9894d20571ca8a9326b",
+      "c5abaa9d5d187ea7b8d5f50ebe3cf074679c296c62daa8b9af5e36efd24288cc",
+      "8b46eb6ee1e4d6cec19835e7de9c75f68947acab4a487e5fbaa753eafaca6bb6",
+      "9d8148f9918c2f79d41c8d8a0f4f2c52251d27d8c5046352b945c2d74993dbef",
+      "76826fd901011acd106f10b5e12ac87b0a0e722c0e5458fdc4d619847daad3bc",
+      "caa8c5141fa588791c09edbf11f4193b77bdbdd58359ce8b4e51afe6fa51781e",
+      "f20d147ea837e38aad5560872287fe3ee5c07bc3e2f5e9b3fbaa73b5a6b01dda",
+      "e5b1b56b794669c2decadf778b51224b94ad2f61ed0c980d9529106dbba11d7d"
+    ],
+    "explicit_absent_layout_hashes": [
+      "c9bdfed8a5859a8ddd2909b9c236dedbb72b507b1ea4d7a3b420b66c62167452",
+      "1fa59bf0234ed48578b4b32fec47f5bfa6c5a83cbf1621a385e1634ae3015cae",
+      "aeb0a91259c85020096c1ab89d75af678d997bbc8fb9eaf1ea21fe21b3dbf83c",
+      "cf78e3706b17d69bb01f6dd28aa830ef01bb28b1571edbf53052e46901ff391c",
+      "3f769190657cbdea73a4da38d252debdece054a9b3f0e92de26f966278aa744c",
+      "b08f573cb2183993c5a7ad1a8d8bd5ea94dc616bb3b2c9894d20571ca8a9326b",
+      "c5abaa9d5d187ea7b8d5f50ebe3cf074679c296c62daa8b9af5e36efd24288cc",
+      "8b46eb6ee1e4d6cec19835e7de9c75f68947acab4a487e5fbaa753eafaca6bb6",
+      "9d8148f9918c2f79d41c8d8a0f4f2c52251d27d8c5046352b945c2d74993dbef",
+      "76826fd901011acd106f10b5e12ac87b0a0e722c0e5458fdc4d619847daad3bc",
+      "caa8c5141fa588791c09edbf11f4193b77bdbdd58359ce8b4e51afe6fa51781e",
+      "f20d147ea837e38aad5560872287fe3ee5c07bc3e2f5e9b3fbaa73b5a6b01dda",
+      "e5b1b56b794669c2decadf778b51224b94ad2f61ed0c980d9529106dbba11d7d"
+    ]
+  },
+  "pair_invariance": {
+    "invariant_keys": [
+      "camera_intrinsics",
+      "camera_transforms",
+      "ego_transforms",
+      "fps",
+      "hdmap_images",
+      "image_description",
+      "image_size",
+      "images",
+      "pts",
+      "scene_description"
+    ],
+    "hashes": {
+      "camera_intrinsics": "84e5e282eca732811e9915e929eed9ee39b3607e51256af9a699fff03f430ec1",
+      "camera_transforms": "2842cf0893a902cc0f377165a38742b35a58028ae430dbaffe4922396104c856",
+      "ego_transforms": "00ac2c0435c8229431ab91ee5c58d9e692029de966231ce097d320aa49136c95",
+      "fps": "3491d0766d96242a4a4f5073e81a205bcc443784bd2d6cec31659804aa96bf03",
+      "hdmap_images": "157e00e6f4130fe53c4654614c9a617cf00ae78aa67865d0b92864a6ed607aea",
+      "image_description": "30d21c249cc821a3cadb501bd94fdfd17682570d46c97aa079c873330c70021c",
+      "image_size": "33e62afae76e231ffb0e6279019dab123127ff7a64263ed9481701cc8d1e4342",
+      "images": "50f8a17b18e3b5f0791762344b61d9498fc7cd6d2e6cea509fece7d67b901194",
+      "pts": "d3ace03fa0bcb51e68d1a58b4b1ca842d4d74b98341d2dbb11329153ce482b2c",
+      "scene_description": "e273b1bc22cae9e9cb9c4d404d1b8c9dd1a3f1456facd3fd9c656336bd2a2432"
+    },
+    "shared_noise_seed": 0,
+    "shared_noise_hash": "d0ec5adac4a1b1c4532e8f8e79368b2a779baa12ea18be0e03b819d5e9268c69"
+  },
+  "leakage_assertions": {
+    "unavailable_uses_strictly_past_source": true,
+    "unavailable_source_is_last_observed": true,
+    "unavailable_box_is_frozen_last_observation": true,
+    "absent_slot_removed": true,
+    "absent_source_removed": true,
+    "roi_not_in_model_kwargs": true,
+    "velocity_not_available_or_used": true
+  },
+  "model_smoke": {
+    "forward_output_shape": [
+      1,
+      13,
+      1,
+      4,
+      8,
+      8
+    ],
+    "loss": 0.37727677822113037,
+    "clean_initialization_max_abs_diff": 0.0,
+    "trainable_parameter_count": 1272,
+    "pilot_hidden_dim_1536_trainable_parameter_count": 1786496,
+    "trainable_parameter_tensor_count": 25,
+    "gradient_parameter_tensor_count": 25,
+    "nonzero_gradient_parameter_tensor_count": 2,
+    "nonzero_gradient_parameters": [
+      "object_availability_adapter.residual_projections.0.weight",
+      "object_availability_adapter.residual_projections.0.bias"
+    ],
+    "post_zero_projection_step_nonzero_gradient_parameter_tensor_count": 25,
+    "post_zero_projection_step_nonzero_gradient_parameters": [
+      "object_availability_adapter.observed_token",
+      "object_availability_adapter.missing_token",
+      "object_availability_adapter.class_embedding.weight",
+      "object_availability_adapter.box_encoder.0.weight",
+      "object_availability_adapter.box_encoder.0.bias",
+      "object_availability_adapter.box_encoder.2.weight",
+      "object_availability_adapter.box_encoder.2.bias",
+      "object_availability_adapter.class_projection.weight",
+      "object_availability_adapter.class_projection.bias",
+      "object_availability_adapter.scene_projection.weight",
+      "object_availability_adapter.scene_projection.bias",
+      "object_availability_adapter.input_norm.weight",
+      "object_availability_adapter.input_norm.bias",
+      "object_availability_adapter.memory_cell.weight_ih",
+      "object_availability_adapter.memory_cell.weight_hh",
+      "object_availability_adapter.memory_cell.bias_ih",
+      "object_availability_adapter.memory_cell.bias_hh",
+      "object_availability_adapter.query_projection.weight",
+      "object_availability_adapter.query_projection.bias",
+      "object_availability_adapter.key_projection.weight",
+      "object_availability_adapter.key_projection.bias",
+      "object_availability_adapter.value_projection.weight",
+      "object_availability_adapter.value_projection.bias",
+      "object_availability_adapter.residual_projections.0.weight",
+      "object_availability_adapter.residual_projections.0.bias"
+    ],
+    "checkpoint_missing_keys_are_adapter_only": true
+  },
+  "encoding_separation": {
+    "temporary_unavailable_hash": "e67dda90a2954acb015bcaf01d84a3f0a2692ab446106d9ea2dd1b0bff582927",
+    "explicit_absent_hash": "1eec3d448d639bb6103f38d38d5bf1ec33a79c1791192a1245bc1b97cb311db3",
+    "l2_difference": 3.404048442840576,
+    "temporary_unavailable_nonzero_count": 40,
+    "explicit_absent_nonzero_count": 0
+  },
+  "condition_assembly": {
+    "model_condition_keys": [
+      "added_time_ids",
+      "camera2referego",
+      "camera_intrinsics",
+      "camera_intrinsics_norm",
+      "camera_transforms",
+      "condition_image_tensor",
+      "crossview_attention_mask",
+      "disable_crossview",
+      "disable_temporal",
+      "encoder_hidden_states",
+      "object_availability",
+      "object_box_states",
+      "object_class_ids",
+      "object_slot_mask",
+      "object_source_frame_indices"
+    ],
+    "loss_target_roi_forwarded": false
+  }
+}

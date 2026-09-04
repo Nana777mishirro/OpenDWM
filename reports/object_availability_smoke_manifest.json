@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "records": [
+    {
+      "base_index": 0,
+      "target_instance_token": "c08be936e0394352b11760ede982d6fd",
+      "target_instance_hash": 4618371944058385905,
+      "target_category": "human.pedestrian.adult",
+      "target_class_id": 1,
+      "missing_start": 3,
+      "missing_duration": 5,
+      "missing_end_exclusive": 8,
+      "min_observed_before": 3,
+      "min_observed_after": 2,
+      "pair_seed": 0
+    }
+  ],
+  "constraints": {
+    "single_selected_object": true,
+    "missing_durations_supported": [
+      1,
+      3,
+      5,
+      7
+    ],
+    "min_observed_before": 3,
+    "min_observed_after": 2,
+    "velocity_input": false
+  }
+}

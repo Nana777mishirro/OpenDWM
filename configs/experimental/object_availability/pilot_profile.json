@@ -1,0 +1,38 @@
+{
+    "common_config": {
+        "object_availability_enabled": true
+    },
+    "model_adapter": {
+        "num_classes": 12,
+        "box_dim": 10,
+        "class_embedding_dim": 32,
+        "slot_dim": 256,
+        "injection_layers": [0],
+        "use_velocity": false,
+        "validate_inputs": true
+    },
+    "dataset_wrapper": {
+        "mode_weights": {
+            "clean": 0.5,
+            "temporary_unavailable": 0.4,
+            "explicit_absent": 0.1
+        },
+        "missing_durations": [1, 3, 5, 7],
+        "min_observed_before": 3,
+        "min_observed_after": 2,
+        "seed": 0,
+        "roi_size": [256, 448],
+        "strict": true,
+        "debug_assertions": true
+    },
+    "training_config": {
+        "train_object_availability_adapter_only": true,
+        "target_roi_loss_weight": 0.0,
+        "3dbox_condition_ratio": 1.0
+    },
+    "experiment_modes": {
+        "A": "clean",
+        "B": "temporary_unavailable",
+        "C": "explicit_absent"
+    }
+}

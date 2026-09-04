@@ -446,6 +446,45 @@ class CrossviewTemporalSD():
             if "added_time_ids" in common_config else None
         }
 
+        # Object validity is a separate structured condition.  In particular,
+        # loss_target_roi is intentionally not included here, preventing a
+        # GT-derived ROI from becoming a model input.
+        if common_config.get("object_availability_enabled", False):
+            required_object_keys = (
+                "object_class_ids", "object_box_states",
+                "object_availability", "object_slot_mask",
+                "object_source_frame_indices",
+            )
+            missing_keys = [i for i in required_object_keys if i not in batch]
+            if missing_keys:
+                raise KeyError(
+                    f"Missing object availability inputs: {missing_keys}")
+            object_conditions = {
+                "object_class_ids": batch["object_class_ids"].long().to(device),
+                "object_box_states": batch["object_box_states"].to(
+                    device=device, dtype=dtype),
+                "object_availability": batch["object_availability"].bool().to(
+                    device),
+                "object_slot_mask": batch["object_slot_mask"].bool().to(device),
+                "object_source_frame_indices": batch[
+                    "object_source_frame_indices"].long().to(device),
+            }
+            if "object_velocities" in batch:
+                object_conditions["object_velocities"] = batch[
+                    "object_velocities"].to(device=device, dtype=dtype)
+
+            if do_classifier_free_guidance:
+                # The unconditional half contains no object slots.  The
+                # conditional half preserves observed/missing/absent semantics.
+                for key, value in tuple(object_conditions.items()):
+                    if key == "object_source_frame_indices":
+                        unconditional = torch.full_like(value, -1)
+                    else:
+                        unconditional = torch.zeros_like(value)
+                    object_conditions[key] = torch.cat(
+                        [unconditional, value], dim=0)
+            result.update(object_conditions)
+
         if (
             isinstance(model, diffusers.SD3Transformer2DModel) and
             text_encoder is not None
@@ -454,6 +493,11 @@ class CrossviewTemporalSD():
 
         # for adopting temporal vae
         if latents_shape is not None and latents_shape[1] != sequence_length:
+            if common_config.get("object_availability_enabled", False):
+                raise NotImplementedError(
+                    "Object availability prototype currently requires one "
+                    "object-state step per latent frame; temporal-VAE "
+                    "resampling is not yet supported")
             pre = 1 if sequence_length % 2 == 1 else 0
             stride = (sequence_length - pre)//(latents_shape[1] - pre)
             for k in result:
@@ -1024,6 +1068,17 @@ class CrossviewTemporalSD():
             if self.should_save:
                 print("{} modules are frozen.".format(frozen_module_count))
 
+        if training_config.get(
+                "train_object_availability_adapter_only", False):
+            self.model.requires_grad_(False)
+            adapter = getattr(
+                self.model, "object_availability_adapter", None)
+            if adapter is None:
+                raise ValueError(
+                    "Adapter-only training requested, but the model has no "
+                    "object availability adapter")
+            adapter.requires_grad_(True)
+
         if self.should_save:
             param_count = sum([
                 i.numel() for i in self.model.parameters() if i.requires_grad
@@ -1365,9 +1420,34 @@ class CrossviewTemporalSD():
                 sd_pred_latent = sd_pred_latent*(reference_frame_loss_mask)
                 target = target*(reference_frame_loss_mask)
 
-            loss_dict["sd_loss"] = torch.nn.functional.mse_loss(
-                sd_pred_latent.float(), target.float(), reduction="mean"
-            ) * self.get_loss_coef("sd")
+            roi_weight = self.training_config.get(
+                "target_roi_loss_weight", 0.0)
+            if roi_weight > 0:
+                if "loss_target_roi" not in batch:
+                    raise KeyError(
+                        "target_roi_loss_weight requires loss_target_roi")
+                roi = batch["loss_target_roi"].to(
+                    device=sd_pred_latent.device, dtype=torch.float32)
+                if roi.shape[1] != sd_pred_latent.shape[1]:
+                    pre = 1 if roi.shape[1] % 2 == 1 else 0
+                    stride = (roi.shape[1] - pre) // \
+                        (sd_pred_latent.shape[1] - pre)
+                    roi = torch.cat(
+                        [roi[:, :pre], roi[:, pre::stride]], dim=1)
+                roi = torch.nn.functional.interpolate(
+                    roi.reshape(-1, 1, *roi.shape[-2:]),
+                    size=sd_pred_latent.shape[-2:], mode="nearest")
+                roi = roi.view(*sd_pred_latent.shape[:3], 1,
+                               *sd_pred_latent.shape[-2:])
+                weights = 1.0 + float(roi_weight) * roi
+                squared_error = (
+                    sd_pred_latent.float() - target.float()).square()
+                loss_value = (squared_error * weights).sum() / \
+                    weights.expand_as(squared_error).sum().clamp_min(1)
+            else:
+                loss_value = torch.nn.functional.mse_loss(
+                    sd_pred_latent.float(), target.float(), reduction="mean")
+            loss_dict["sd_loss"] = loss_value * self.get_loss_coef("sd")
 
         if len(sd_pred) > 1:
             depth_features = sd_pred[1]

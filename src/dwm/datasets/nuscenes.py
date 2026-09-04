@@ -408,7 +408,8 @@ class MotionDataset(torch.utils.data.Dataset):
 
     @staticmethod
     def get_3dbox_image(
-        tables: dict, indices: dict, sample_data: dict, _3dbox_image_settings: dict
+        tables: dict, indices: dict, sample_data: dict,
+        _3dbox_image_settings: dict, excluded_instance_tokens=None
     ):
         # options
         pen_width = _3dbox_image_settings.get("pen_width", 8)
@@ -444,6 +445,11 @@ class MotionDataset(torch.utils.data.Dataset):
         for sa in MotionDataset.query_range(
                 tables, indices, "sample_annotation",
                 sample_data["sample_token"], column_name="sample_token"):
+            # Object-availability experiments remove only the selected
+            # measurement.  The default remains byte-for-byte equivalent.
+            if excluded_instance_tokens is not None and \
+                    sa["instance_token"] in excluded_instance_tokens:
+                continue
             instance = MotionDataset.query(
                 tables, indices, "instance", sa["instance_token"])
             category = MotionDataset.query(

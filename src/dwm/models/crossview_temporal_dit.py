@@ -5,6 +5,7 @@ import torch
 import math
 
 import dwm.models.adapters
+import dwm.models.object_availability_adapter
 from dwm.models.crossview_temporal import VTSelfAttentionBlock, AlphaBlender, Mixer
 
 
@@ -112,6 +113,7 @@ class DiTCrossviewTemporalConditionModel(diffusers.SD3Transformer2DModel):
         num_attention_heads: int = 18,
         projection_class_embeddings_input_dim: int = None,
         condition_image_adapter_config: Optional[dict] = None,
+        object_availability_adapter_config: Optional[dict] = None,
         enable_crossview: bool = False,
         enable_temporal: bool = False,
         crossview_attention_type: str = None,
@@ -150,6 +152,14 @@ class DiTCrossviewTemporalConditionModel(diffusers.SD3Transformer2DModel):
 
         # views and frames index embedding
         inner_dim = attention_head_dim * num_attention_heads
+        if object_availability_adapter_config is not None:
+            self.object_availability_adapter = \
+                dwm.models.object_availability_adapter\
+                .ObjectAvailabilityAdapter(
+                    hidden_dim=inner_dim,
+                    **object_availability_adapter_config)
+        else:
+            self.object_availability_adapter = None
         self.index_proj = diffusers.models.embeddings.Timesteps(
             inner_dim, True, 0)
 
@@ -377,6 +387,12 @@ class DiTCrossviewTemporalConditionModel(diffusers.SD3Transformer2DModel):
         encoder_hidden_states: torch.FloatTensor = None,
         pooled_projections: torch.FloatTensor = None,
         condition_image_tensor: torch.Tensor = None,
+        object_class_ids: torch.Tensor = None,
+        object_box_states: torch.Tensor = None,
+        object_availability: torch.Tensor = None,
+        object_slot_mask: torch.Tensor = None,
+        object_velocities: torch.Tensor = None,
+        object_source_frame_indices: torch.Tensor = None,
         disable_crossview: torch.BoolTensor = None,
         disable_temporal: torch.BoolTensor = None,
         crossview_attention_mask: torch.Tensor = None,
@@ -492,6 +508,27 @@ class DiTCrossviewTemporalConditionModel(diffusers.SD3Transformer2DModel):
                 hidden_states = hidden_states + \
                     condition_residuals.pop(0).flatten(0, 2)\
                     .flatten(2).permute(0, 2, 1)    
+
+            # Independent object-level validity path.  This does not alter the
+            # existing raster/HDMap/text/reference conditions and its final
+            # projection is zero initialized.
+            if self.object_availability_adapter is not None and \
+                    object_class_ids is not None and \
+                    i in self.object_availability_adapter.injection_layers:
+                object_residual = self.object_availability_adapter(
+                    hidden_states,
+                    batch_size=batch_size,
+                    sequence_length=sequence_length,
+                    view_count=view_count,
+                    class_ids=object_class_ids,
+                    box_states=object_box_states,
+                    availability=object_availability,
+                    slot_mask=object_slot_mask,
+                    layer_index=i,
+                    velocities=object_velocities,
+                    source_frame_indices=object_source_frame_indices,
+                )
+                hidden_states = hidden_states + object_residual
 
             # text-spatio
             if self.training and self.gradient_checkpointing:
