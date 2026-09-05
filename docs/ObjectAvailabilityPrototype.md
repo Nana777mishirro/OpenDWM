@@ -181,8 +181,70 @@ The checked report at `reports/object_availability_smoke_report.json` records:
 - B/C interval encoding L2 difference `3.4040484`, B non-zero count `40`, C
   non-zero count `0`, and distinct SHA-256 hashes.
 
-No full training, model download, dependency upgrade, or 17 GB checkpoint load
-was performed.
+No full training was performed by this CPU smoke.
+
+### Full-checkpoint one-batch smoke
+
+The follow-up check at
+`reports/object_availability_full_smoke_report.json` loaded the local SD 3.5
+Medium model and the 40k CTSD checkpoint on one NVIDIA RTX 6000D.  It used a
+real six-frame, six-camera nuScenes Mini mode-B sample at 128x224.  The run
+performed one forward and backward with gradient accumulation set to two, so
+no optimizer update or parameter mutation occurred.
+
+The checkpoint had exactly the 25 new adapter tensors missing and no
+unexpected keys.  The denoising loss was `0.0588061`; the zero-initialised
+clean residual was exactly `0.0`; both output-projection tensors received
+non-zero gradients.  In the selected missing frame, B and C had an encoding
+L2 difference of `6.745656`, with 256 non-zero B values and zero non-zero C
+values.  Peak CUDA allocation was 32,672,084,480 bytes.
+
+The raw-Mini/single-GPU overlay is generated separately so the original
+16-GPU FSDP training recipe remains unchanged:
+
+```bash
+python -m dwm.tools.make_object_availability_smoke_config \
+  --input-config /path/to/pilot_B_base.json \
+  --output-config /path/to/full_smoke_B.json \
+  --nuscenes-root /path/to/nuscenes-mini \
+  --manifest /path/to/manifest_train_1.json \
+  --output-path /path/to/output
+
+CUDA_VISIBLE_DEVICES=1 \
+python -m dwm.tools.object_availability_full_smoke \
+  --config /path/to/full_smoke_B.json \
+  --report-output /path/to/full_report.json
+```
+
+For a later bounded Mini pilot, use a 12-frame config and a larger manifest:
+
+```bash
+python -m dwm.tools.make_object_availability_smoke_config \
+  --input-config /path/to/pilot_B_base.json \
+  --output-config /path/to/pilot_B_12f_nomani.json \
+  --nuscenes-root /path/to/nuscenes-mini \
+  --sequence-length 12 \
+  --missing-durations 1 3 5 7 \
+  --output-path /path/to/pilot-output
+
+python -m dwm.tools.build_object_availability_manifest \
+  --config /path/to/pilot_B_12f_nomani.json \
+  --dataset-key training_dataset \
+  --output /path/to/pilot_train_manifest.json \
+  --count 64
+
+# Regenerate the same 12-frame config with --manifest, then run at most 20
+# data batches (10 optimizer steps because gradient_accumulation_steps=2).
+CUDA_VISIBLE_DEVICES=1 python -m dwm.train \
+  -c /path/to/pilot_B_12f.json \
+  --max-train-steps 20 \
+  --log-steps 1 \
+  --preview-steps 1000000 \
+  --checkpointing-steps 1000000 \
+  --evaluation-steps 0
+```
+
+The last command is a proposed next step only; it was not run.
 
 ## Known limitations
 
@@ -191,9 +253,8 @@ was performed.
   dataset formats need an explicit track metadata bridge.
 - nuScenes provides no direct measured object velocity in the current table
   path, so velocity is disabled.
-- The full checkpoint was not forwarded in this environment because the GPU
-  driver was unavailable; the forward/backward test uses the real integrated
-  DiT class with a tiny CPU configuration.
+- The full-checkpoint smoke covers one mode-B batch at reduced resolution; it
+  is an integration/gradient check, not evidence of learned state retention.
 - Temporal-VAE resampling is explicitly unsupported in this first version.
 - The first optimizer step of a strict zero-initialised residual updates only
   the output projection; upstream memory/token parameters receive non-zero

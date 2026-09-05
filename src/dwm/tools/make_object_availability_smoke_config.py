@@ -23,6 +23,9 @@ def parse_args():
     parser.add_argument("--validation-split", default="mini_val")
     parser.add_argument("--sequence-length", type=int, default=6)
     parser.add_argument(
+        "--missing-durations", type=int, nargs="+", default=(1,),
+        help="Subset of 1 3 5 7; the default is the minimal one-frame smoke")
+    parser.add_argument(
         "--image-size", type=int, nargs=2, metavar=("HEIGHT", "WIDTH"),
         default=(128, 224))
     parser.add_argument("--manifest", type=Path, default=None)
@@ -65,7 +68,7 @@ def _configure_dataset(
         "enable_camera_transforms": True,
     })
     motion.pop("image_description_settings", None)
-    wrapper["missing_durations"] = [1]
+    wrapper["missing_durations"] = list(args.missing_durations)
     wrapper["roi_size"] = image_size
     if manifest is None:
         wrapper.pop("manifest_path", None)
@@ -95,9 +98,15 @@ def _configure_dataset(
 
 def main():
     args = parse_args()
-    if args.sequence_length < 6:
+    allowed_durations = {1, 3, 5, 7}
+    if not set(args.missing_durations).issubset(allowed_durations):
         raise ValueError(
-            "sequence_length must be >= 6 for 3-before + 1-missing + 2-after")
+            f"missing_durations must be a subset of {allowed_durations}")
+    minimum_length = 3 + max(args.missing_durations) + 2
+    if args.sequence_length < minimum_length:
+        raise ValueError(
+            "sequence_length must be >= {} for 3-before + {}-missing + "
+            "2-after".format(minimum_length, max(args.missing_durations)))
     image_size = [int(i) for i in args.image_size]
     config = json.loads(args.input_config.read_text(encoding="utf-8"))
     config = copy.deepcopy(config)
@@ -168,7 +177,7 @@ def main():
         "batch_size": 1,
         "sequence_length": args.sequence_length,
         "image_size": image_size,
-        "missing_durations": [1],
+        "missing_durations": list(args.missing_durations),
         "optimizer_step": False,
         "raw_dataset": args.dataset_name,
         "training_split": args.training_split,
@@ -183,6 +192,7 @@ def main():
         "nuscenes_root": str(args.nuscenes_root.resolve()),
         "sequence_length": args.sequence_length,
         "image_size": image_size,
+        "missing_durations": list(args.missing_durations),
         "manifest": None if args.manifest is None else
             str(args.manifest.resolve()),
         "single_gpu": True,

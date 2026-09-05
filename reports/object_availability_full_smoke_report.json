@@ -1,0 +1,64 @@
+{
+  "status": "passed",
+  "date": "2026-09-05",
+  "scope": "one full CTSD forward/backward; no optimizer step",
+  "pretrained_model": "stabilityai/stable-diffusion-3.5-medium (local snapshot)",
+  "checkpoint": "ctsd_35_tirda_bm_nwao_40k.pth",
+  "checkpoint_load": {
+    "missing_key_count": 25,
+    "missing_keys_scope": "object_availability_adapter only",
+    "unexpected_key_count": 0
+  },
+  "selected_record": {
+    "base_index": 0,
+    "target_instance_token": "d7e840afc77247278b0b6346c07921e5",
+    "target_category": "human.pedestrian.adult",
+    "target_class_id": 1,
+    "missing_start": 3,
+    "missing_duration": 1,
+    "missing_end_exclusive": 4,
+    "min_observed_before": 3,
+    "min_observed_after": 2
+  },
+  "batch": {
+    "vae_images_shape": [1, 6, 6, 3, 128, 224],
+    "3dbox_images_shape": [1, 6, 6, 3, 128, 224],
+    "mode_ids": [1],
+    "availability": [[[1], [1], [1], [0], [1], [1]]],
+    "slot_mask": [[[1], [1], [1], [1], [1], [1]]],
+    "source_frame_indices": [[[0], [1], [2], [2], [4], [5]]]
+  },
+  "loss": 0.05880605801939964,
+  "trainable_parameter_count": 1786496,
+  "trainable_tensor_count": 25,
+  "gradient_tensor_count": 25,
+  "nonzero_gradient_tensors": {
+    "object_availability_adapter.residual_projections.0.weight": {
+      "nonzero_count": 358191,
+      "l2_norm": 0.004471511114388704
+    },
+    "object_availability_adapter.residual_projections.0.bias": {
+      "nonzero_count": 1533,
+      "l2_norm": 0.002063269726932049
+    }
+  },
+  "zero_init": {
+    "residual_projection_max_abs_before": 0.0,
+    "residual_projection_max_abs_after": 0.0,
+    "clean_residual_max_abs": 0.0,
+    "weights_unchanged_without_optimizer_step": true
+  },
+  "unavailable_vs_absent": {
+    "interval": [3, 4],
+    "l2_difference": 6.7456560134887695,
+    "temporary_unavailable_hash": "12965ed17bbdd86360faaf57197e9f195a0ac1df002ba1df23d39d0371c14188",
+    "explicit_absent_hash": "f4dfd32ef3f39c172e5f35d05c9346f08eb01d3e08c50d0b017afac4b22c320e",
+    "temporary_unavailable_nonzero_count": 256,
+    "explicit_absent_nonzero_count": 0
+  },
+  "cuda": {
+    "device_name": "NVIDIA RTX 6000D",
+    "peak_allocated_bytes": 32672084480,
+    "peak_reserved_bytes": 32931577856
+  }
+}
