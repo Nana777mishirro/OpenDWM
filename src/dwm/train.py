@@ -40,12 +40,19 @@ def create_parser():
     parser.add_argument(
         "--wandb-run-name", type=str, default="train",
         help="The wandb run name.")
+    parser.add_argument(
+        "--max-train-steps", default=None, type=int,
+        help="Maximum data steps to run in this invocation. This safety "
+        "limit is independent of --resume-from and leaves the historical "
+        "unbounded behavior unchanged when omitted.")
     return parser
 
 
 if __name__ == "__main__":
     parser = create_parser()
     args = parser.parse_args()
+    if args.max_train_steps is not None and args.max_train_steps <= 0:
+        parser.error("--max-train-steps must be a positive integer")
 
     with open(args.config_path, "r", encoding="utf-8") as f:
         config = json.load(f)
@@ -162,6 +169,8 @@ if __name__ == "__main__":
 
     # train loop
     global_step = 0 if args.resume_from is None else args.resume_from
+    invocation_step = 0
+    stop_training = False
     for epoch in range(config["train_epochs"]):
 
         if ddp:
@@ -175,6 +184,7 @@ if __name__ == "__main__":
         for batch in training_dataloader:
             pipeline.train_step(batch, global_step)
             global_step += 1
+            invocation_step += 1
 
             # log
             if global_step % args.log_steps == 0:
@@ -207,8 +217,19 @@ if __name__ == "__main__":
                     global_step, len(validation_dataset),
                     validation_dataloader, validation_datasampler)
 
+            if args.max_train_steps is not None and \
+                    invocation_step >= args.max_train_steps:
+                stop_training = True
+                break
+
         if should_log:
             print("Epoch {} done.".format(epoch))
+        if stop_training:
+            if should_log:
+                print(
+                    "Stopped after {} training steps by --max-train-steps."
+                    .format(invocation_step))
+            break
 
     if torch.distributed.is_initialized():
         torch.distributed.destroy_process_group()
