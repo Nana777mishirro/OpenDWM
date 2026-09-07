@@ -54,9 +54,10 @@ class ObjectAvailabilityDataset(torch.utils.data.Dataset):
     transforms still run.  A manifest is recommended for training; without one
     the target and interval are selected deterministically from ``index``.
 
-    The only GT-derived value retained during unavailable frames is
-    ``loss_target_roi``.  Its name and separate construction are intentional:
-    CTSD may use it to weight the loss, but never passes it to the model.
+    Missing-frame GT is retained only in ``loss_target_roi``.  Its name and
+    separate construction are intentional: CTSD may use it to weight the loss,
+    but never passes it to the model.  Model-visible missing-frame geometry is
+    instead extrapolated causally from observed annotations before the gap.
     """
 
     def __init__(
@@ -70,6 +71,9 @@ class ObjectAvailabilityDataset(torch.utils.data.Dataset):
         seed: int = 0,
         manifest_path: Optional[str] = None,
         roi_size: tuple = (256, 448),
+        motion_model: str = "constant_velocity",
+        acceleration_scale: float = 1.0,
+        extrapolate_rotation: bool = False,
         strict: bool = True,
         debug_assertions: bool = True,
     ):
@@ -85,6 +89,12 @@ class ObjectAvailabilityDataset(torch.utils.data.Dataset):
                 f"missing_durations must be a subset of {allowed_durations}")
         if base_dataset._3dbox_image_settings is None:
             raise ValueError("The wrapped dataset must enable 3D-box images")
+        if motion_model not in ("constant_velocity", "constant_acceleration"):
+            raise ValueError(
+                "motion_model must be constant_velocity or "
+                "constant_acceleration")
+        if not np.isfinite(acceleration_scale) or acceleration_scale < 0:
+            raise ValueError("acceleration_scale must be finite and non-negative")
 
         self.base_dataset = base_dataset
         self.mode = mode
@@ -100,6 +110,9 @@ class ObjectAvailabilityDataset(torch.utils.data.Dataset):
         self.min_observed_after = int(min_observed_after)
         self.seed = int(seed)
         self.roi_size = tuple(int(i) for i in roi_size)
+        self.motion_model = motion_model
+        self.acceleration_scale = float(acceleration_scale)
+        self.extrapolate_rotation = bool(extrapolate_rotation)
         self.strict = strict
         self.debug_assertions = debug_assertions
 
@@ -311,6 +324,137 @@ class ObjectAvailabilityDataset(torch.utils.data.Dataset):
                 ImageDraw.Draw(image).rectangle(box, fill=1)
         return torch.from_numpy(np.asarray(image, dtype=np.uint8).copy())
 
+    @staticmethod
+    def _constant_velocity_annotation(
+        previous_annotation: dict,
+        last_annotation: dict,
+        frames_after_last: int,
+    ) -> dict:
+        """Causally extrapolate translation from two observed annotations.
+
+        nuScenes samples in one configured segment use a fixed temporal
+        stride, so displacement per segment frame is the appropriate velocity
+        unit here.  Size and orientation are held at their last observed
+        values; no annotation from an unavailable frame is consulted.
+        """
+        if frames_after_last <= 0:
+            raise ValueError("frames_after_last must be positive")
+        previous_translation = np.asarray(
+            previous_annotation["translation"], dtype=np.float64)
+        last_translation = np.asarray(
+            last_annotation["translation"], dtype=np.float64)
+        prediction = copy.deepcopy(last_annotation)
+        prediction["translation"] = (
+            last_translation +
+            (last_translation - previous_translation) * frames_after_last
+        ).tolist()
+        return prediction
+
+    @staticmethod
+    def _constant_acceleration_annotation(
+        older_annotation: dict,
+        previous_annotation: dict,
+        last_annotation: dict,
+        frames_after_last: int,
+        acceleration_scale: float = 1.0,
+    ) -> dict:
+        """Causally extrapolate translation from three observations.
+
+        The second finite difference estimates acceleration in segment-frame
+        units. ``acceleration_scale`` can damp this noisy estimate without
+        consulting any annotation inside or after the unavailable interval.
+        """
+        if frames_after_last <= 0:
+            raise ValueError("frames_after_last must be positive")
+        if not np.isfinite(acceleration_scale) or acceleration_scale < 0:
+            raise ValueError("acceleration_scale must be finite and non-negative")
+        older_translation = np.asarray(
+            older_annotation["translation"], dtype=np.float64)
+        previous_translation = np.asarray(
+            previous_annotation["translation"], dtype=np.float64)
+        last_translation = np.asarray(
+            last_annotation["translation"], dtype=np.float64)
+        velocity = last_translation - previous_translation
+        acceleration = last_translation - 2 * previous_translation + \
+            older_translation
+        step = float(frames_after_last)
+        prediction = copy.deepcopy(last_annotation)
+        prediction["translation"] = (
+            last_translation + step * velocity +
+            0.5 * float(acceleration_scale) * step * (step + 1) * acceleration
+        ).tolist()
+        return prediction
+
+    @staticmethod
+    def _extrapolate_annotation_rotation(
+        previous_annotation: dict,
+        last_annotation: dict,
+        prediction: dict,
+        frames_after_last: int,
+    ) -> dict:
+        """Apply the last observed relative rotation at each missing step."""
+        previous_rotation = transforms3d.quaternions.quat2mat(
+            np.asarray(previous_annotation["rotation"], dtype=np.float64))
+        last_rotation = transforms3d.quaternions.quat2mat(
+            np.asarray(last_annotation["rotation"], dtype=np.float64))
+        relative_rotation = last_rotation @ previous_rotation.T
+        predicted_rotation = np.linalg.matrix_power(
+            relative_rotation, frames_after_last) @ last_rotation
+        prediction["rotation"] = transforms3d.quaternions.mat2quat(
+            predicted_rotation).tolist()
+        return prediction
+
+    def _causal_missing_annotation(
+        self, annotations: list, target: str, start: int, frame: int
+    ) -> dict:
+        """Predict one unavailable state using observed frames only."""
+        if frame < start:
+            raise ValueError("Missing-frame prediction requested before start")
+        older = annotations[start - 3].get(target)
+        previous = annotations[start - 2].get(target)
+        last = annotations[start - 1].get(target)
+        if previous is None or last is None:
+            raise AssertionError(
+                "Motion extrapolation requires two observed annotations")
+        step = frame - (start - 1)
+        if self.motion_model == "constant_acceleration":
+            if older is None:
+                raise AssertionError(
+                    "Constant-acceleration extrapolation requires three "
+                    "observed annotations")
+            prediction = self._constant_acceleration_annotation(
+                older, previous, last, step, self.acceleration_scale)
+        else:
+            prediction = self._constant_velocity_annotation(
+                previous, last, step)
+        if self.extrapolate_rotation:
+            prediction = self._extrapolate_annotation_rotation(
+                previous, last, prediction, step)
+        return prediction
+
+    def _build_spatial_prior(
+        self, segment: list, annotations: list, record: dict, mode: str
+    ) -> torch.Tensor:
+        """Build a model-visible prior without missing/future target GT."""
+        target = record["target_instance_token"]
+        start = record["missing_start"]
+        stop = record["missing_end_exclusive"]
+        predicted = {
+            frame: self._causal_missing_annotation(
+                annotations, target, start, frame)
+            for frame in range(start, stop)
+        } if mode == MODE_UNAVAILABLE else {}
+        return torch.stack([
+            torch.stack([
+                self._make_loss_roi(sample_data, predicted.get(frame))
+                for sample_data in segment[frame]
+                if MotionDataset.check_sensor(
+                    self.base_dataset.tables, self.base_dataset.indices,
+                    sample_data, modality="camera")
+            ])
+            for frame in range(len(segment))
+        ])
+
     def _build_model_inputs(
         self, segment: list, annotations: list, record: dict, mode: str
     ) -> dict:
@@ -342,7 +486,8 @@ class ObjectAvailabilityDataset(torch.utils.data.Dataset):
                 if last_observed_frame is None:
                     raise AssertionError(
                         "Unavailable interval has no prior observed state")
-                source_annotation = annotations[last_observed_frame][target]
+                source_annotation = self._causal_missing_annotation(
+                    annotations, target, start, frame)
                 class_ids[frame, 0] = record["target_class_id"]
                 box_states[frame, 0] = self._normalized_box_state(
                     source_annotation, reference_from_world)
@@ -373,9 +518,14 @@ class ObjectAvailabilityDataset(torch.utils.data.Dataset):
                 assert torch.all(~availability[interval])
                 assert torch.all(slot_mask[interval])
                 assert torch.all(source_frames[interval] == expected_source)
-                expected_box = box_states[expected_source:expected_source + 1]
-                assert torch.equal(
-                    box_states[interval], expected_box.expand_as(box_states[interval]))
+                expected_boxes = torch.stack([
+                    self._normalized_box_state(
+                        self._causal_missing_annotation(
+                            annotations, target, start, frame),
+                        reference_from_world)
+                    for frame in range(start, stop)
+                ]).unsqueeze(1)
+                assert torch.equal(box_states[interval], expected_boxes)
             elif mode == MODE_ABSENT:
                 assert torch.all(~slot_mask[interval])
                 assert torch.all(source_frames[interval] == -1)
@@ -427,6 +577,11 @@ class ObjectAvailabilityDataset(torch.utils.data.Dataset):
 
         result.update(self._build_model_inputs(
             segment, annotations, record, mode))
+        # This model-visible prior uses only observations before the interval
+        # and current camera poses. Missing-frame target annotations remain
+        # isolated in the loss-only ROI below.
+        result["object_spatial_prior"] = self._build_spatial_prior(
+            segment, annotations, record, mode)
         result["loss_target_roi"] = torch.stack([
             torch.stack([
                 self._make_loss_roi(sample_data, annotations[frame].get(target))

@@ -171,7 +171,14 @@ if __name__ == "__main__":
     global_step = 0 if args.resume_from is None else args.resume_from
     invocation_step = 0
     stop_training = False
-    for epoch in range(config["train_epochs"]):
+    steps_per_epoch = len(training_dataloader)
+    start_epoch = global_step // steps_per_epoch
+    start_batch = global_step % steps_per_epoch
+    if should_log and args.resume_from is not None:
+        print(
+            "Resuming from epoch {}, batch {} (global step {}).".format(
+                start_epoch, start_batch, global_step))
+    for epoch in range(start_epoch, config["train_epochs"]):
 
         if ddp:
             # Fixing training data order reduces the accessed objects per rank,
@@ -181,7 +188,9 @@ if __name__ == "__main__":
                 else epoch
             training_datasampler.set_epoch(sampler_epoch)
 
-        for batch in training_dataloader:
+        for batch_index, batch in enumerate(training_dataloader):
+            if epoch == start_epoch and batch_index < start_batch:
+                continue
             pipeline.train_step(batch, global_step)
             global_step += 1
             invocation_step += 1

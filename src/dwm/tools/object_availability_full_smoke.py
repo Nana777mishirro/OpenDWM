@@ -81,6 +81,10 @@ def _clean_residual(adapter, item, device):
             layer_index=adapter.injection_layers[0],
             source_frame_indices=item[
                 "object_source_frame_indices"].unsqueeze(0).to(device),
+            spatial_prior=item["object_spatial_prior"][:, :1].unsqueeze(0).to(
+                device=device, dtype=dtype),
+            spatial_height=2,
+            spatial_width=2,
         )
     return float(residual.abs().max())
 

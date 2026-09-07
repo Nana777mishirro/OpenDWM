@@ -27,6 +27,9 @@ class ObjectAvailabilityAdapter(torch.nn.Module):
         class_embedding_dim: int = 32,
         slot_dim: int = 256,
         injection_layers: Iterable[int] = (0,),
+        inject_on_observed: bool = False,
+        use_spatial_prior: bool = True,
+        spatial_prior_dilation_tokens: int = 0,
         use_velocity: bool = False,
         velocity_dim: int = 3,
         validate_inputs: bool = True,
@@ -36,6 +39,12 @@ class ObjectAvailabilityAdapter(torch.nn.Module):
         self.box_dim = box_dim
         self.slot_dim = slot_dim
         self.injection_layers = tuple(int(i) for i in injection_layers)
+        self.inject_on_observed = inject_on_observed
+        self.use_spatial_prior = use_spatial_prior
+        self.spatial_prior_dilation_tokens = int(
+            spatial_prior_dilation_tokens)
+        if self.spatial_prior_dilation_tokens < 0:
+            raise ValueError("spatial_prior_dilation_tokens must be non-negative")
         self.use_velocity = use_velocity
         self.velocity_dim = velocity_dim
         self.validate_inputs = validate_inputs
@@ -176,6 +185,9 @@ class ObjectAvailabilityAdapter(torch.nn.Module):
         layer_index: int,
         velocities: Optional[torch.Tensor] = None,
         source_frame_indices: Optional[torch.Tensor] = None,
+        spatial_prior: Optional[torch.Tensor] = None,
+        spatial_height: Optional[int] = None,
+        spatial_width: Optional[int] = None,
     ) -> torch.Tensor:
         if layer_index not in self.injection_layers:
             return torch.zeros_like(hidden_states)
@@ -193,7 +205,15 @@ class ObjectAvailabilityAdapter(torch.nn.Module):
         queries = self.query_projection(structured)
         keys = self.key_projection(slots).unsqueeze(2).unsqueeze(3)
         values = self.value_projection(slots).unsqueeze(2).unsqueeze(3)
-        active = slot_mask.unsqueeze(2).unsqueeze(3).unsqueeze(-1)
+        injection_mask = slot_mask.bool()
+        if not self.inject_on_observed:
+            # Observed frames update the causal memory but need no corrective
+            # residual: the base raster already contains their current box.
+            # Restricting injection to unavailable frames makes clean and
+            # explicitly absent inputs a hard no-op after training as well as
+            # at zero initialization.
+            injection_mask = injection_mask & ~availability.bool()
+        active = injection_mask.unsqueeze(2).unsqueeze(3).unsqueeze(-1)
         gates = torch.sigmoid(
             (queries.unsqueeze(-2) * keys).sum(-1, keepdim=True) /
             self.slot_dim ** 0.5)
@@ -201,4 +221,39 @@ class ObjectAvailabilityAdapter(torch.nn.Module):
         normalizer = active.sum(dim=-2).clamp_min(1)
         fused = gated_values / normalizer
         residual = self.residual_projections[str(layer_index)](fused)
+        # A trained projection can have a non-zero bias.  Without a final
+        # presence gate, an explicitly absent (all-slots-inactive) frame would
+        # therefore receive a spatially constant residual even though
+        # ``fused`` is exactly zero.  Preserve the semantic contract that no
+        # active object slot means no adapter intervention.
+        frame_has_active_slot = injection_mask.any(dim=2).view(
+            batch_size, sequence_length, 1, 1, 1)
+        residual = residual * frame_has_active_slot.to(residual.dtype)
+        if self.use_spatial_prior:
+            if spatial_prior is None or spatial_height is None or \
+                    spatial_width is None:
+                raise ValueError(
+                    "Spatial prior and transformer grid size are required")
+            if spatial_height * spatial_width != spatial_count:
+                raise ValueError(
+                    "Transformer grid does not match spatial token count")
+            flat_prior = spatial_prior.reshape(
+                -1, 1, *spatial_prior.shape[-2:]).to(residual.dtype)
+            if all(i >= j for i, j in zip(
+                    flat_prior.shape[-2:], (spatial_height, spatial_width))):
+                flat_prior = torch.nn.functional.adaptive_max_pool2d(
+                    flat_prior, output_size=(spatial_height, spatial_width))
+            else:
+                flat_prior = torch.nn.functional.interpolate(
+                    flat_prior, size=(spatial_height, spatial_width),
+                    mode="nearest")
+            if self.spatial_prior_dilation_tokens:
+                radius = self.spatial_prior_dilation_tokens
+                flat_prior = torch.nn.functional.max_pool2d(
+                    flat_prior, kernel_size=2 * radius + 1, stride=1,
+                    padding=radius)
+            spatial_gate = flat_prior.view(
+                batch_size, sequence_length, view_count,
+                spatial_count, 1)
+            residual = residual * spatial_gate
         return residual.reshape_as(hidden_states)

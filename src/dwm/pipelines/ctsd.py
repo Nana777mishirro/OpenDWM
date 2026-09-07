@@ -26,6 +26,8 @@ import transformers
 
 class CrossviewTemporalSD():
 
+    OBJECT_AVAILABILITY_ADAPTER_PREFIX = "object_availability_adapter."
+
     @staticmethod
     def load_state(path: str):
         if path.endswith(".safetensors"):
@@ -34,6 +36,49 @@ class CrossviewTemporalSD():
             state = torch.load(path, map_location="cpu", weights_only=True)
 
         return state
+
+    @classmethod
+    def get_object_availability_adapter_state(cls, state_dict):
+        adapter_state = {
+            key: value for key, value in state_dict.items()
+            if key.startswith(cls.OBJECT_AVAILABILITY_ADAPTER_PREFIX)
+        }
+        if not adapter_state:
+            raise ValueError(
+                "The checkpoint has no object-availability adapter tensors")
+        return adapter_state
+
+    @classmethod
+    def load_object_availability_adapter_state(
+        cls, model, state_dict, checkpoint_path
+    ):
+        adapter = getattr(model, "object_availability_adapter", None)
+        if adapter is None:
+            raise ValueError(
+                "An object-availability adapter checkpoint was provided, but "
+                "the model has no object-availability adapter")
+
+        adapter_state = cls.get_object_availability_adapter_state(state_dict)
+        expected_keys = {
+            cls.OBJECT_AVAILABILITY_ADAPTER_PREFIX + key
+            for key in adapter.state_dict()
+        }
+        actual_keys = set(adapter_state)
+        missing_keys = sorted(expected_keys - actual_keys)
+        unexpected_keys = sorted(actual_keys - expected_keys)
+        if missing_keys or unexpected_keys:
+            raise ValueError(
+                "Incompatible object-availability adapter checkpoint {}: "
+                "missing keys {}, unexpected keys {}".format(
+                    checkpoint_path, missing_keys, unexpected_keys))
+
+        incompatible = model.load_state_dict(adapter_state, strict=False)
+        if incompatible.unexpected_keys:
+            raise ValueError(
+                "Unexpected keys while loading object-availability adapter "
+                "checkpoint {}: {}".format(
+                    checkpoint_path, incompatible.unexpected_keys))
+        return incompatible
 
     @staticmethod
     def flatten_clip_text(
@@ -453,7 +498,7 @@ class CrossviewTemporalSD():
             required_object_keys = (
                 "object_class_ids", "object_box_states",
                 "object_availability", "object_slot_mask",
-                "object_source_frame_indices",
+                "object_source_frame_indices", "object_spatial_prior",
             )
             missing_keys = [i for i in required_object_keys if i not in batch]
             if missing_keys:
@@ -468,6 +513,8 @@ class CrossviewTemporalSD():
                 "object_slot_mask": batch["object_slot_mask"].bool().to(device),
                 "object_source_frame_indices": batch[
                     "object_source_frame_indices"].long().to(device),
+                "object_spatial_prior": batch["object_spatial_prior"].to(
+                    device=device, dtype=dtype),
             }
             if "object_velocities" in batch:
                 object_conditions["object_velocities"] = batch[
@@ -890,6 +937,7 @@ class CrossviewTemporalSD():
         training_config: dict, inference_config: dict,
         pretrained_model_name_or_path: str, model, model_dtype=None,
         model_checkpoint_path=None, model_load_state_args: dict = {},
+        object_availability_adapter_checkpoint_path=None,
         metrics: dict = {}, resume_from=None
     ):
         self.should_save = not torch.distributed.is_initialized() or \
@@ -1029,7 +1077,10 @@ class CrossviewTemporalSD():
                 pretrained_model_name_or_path, subfolder="scheduler")
 
         # load_state
-        if resume_from is not None:
+        adapter_only_resume = resume_from is not None and \
+            training_config.get(
+                "save_object_availability_adapter_only", False)
+        if resume_from is not None and not adapter_only_resume:
             state_dict = CrossviewTemporalSD.load_state(
                 os.path.join(
                     output_path, "checkpoints", "{}.pth".format(resume_from)))
@@ -1054,6 +1105,32 @@ class CrossviewTemporalSD():
             ):
                 print(f"missing keys: {missing_keys}")
                 print(f"unexpected keys: {unexpected_keys}")
+
+        if adapter_only_resume and model_checkpoint_path is None:
+            raise ValueError(
+                "Adapter-only resume requires model_checkpoint_path for the "
+                "frozen base model")
+        if adapter_only_resume and \
+                object_availability_adapter_checkpoint_path is not None:
+            raise ValueError(
+                "Do not set object_availability_adapter_checkpoint_path when "
+                "resuming adapter-only training")
+
+        adapter_checkpoint_path = (
+            os.path.join(
+                output_path, "checkpoints", "{}.pth".format(resume_from))
+            if adapter_only_resume else
+            object_availability_adapter_checkpoint_path
+        )
+        if adapter_checkpoint_path is not None:
+            adapter_state = CrossviewTemporalSD.load_state(
+                adapter_checkpoint_path)
+            CrossviewTemporalSD.load_object_availability_adapter_state(
+                self.model, adapter_state, adapter_checkpoint_path)
+            if self.should_save:
+                print(
+                    "Loaded object-availability adapter checkpoint {}."
+                    .format(adapter_checkpoint_path))
 
         if "freezing_pattern" in training_config:
             pattern = re.compile(training_config["freezing_pattern"])
@@ -1187,7 +1264,20 @@ class CrossviewTemporalSD():
         return reference_latent_count
 
     def save_checkpoint(self, output_path: str, steps: int):
-        if torch.distributed.is_initialized():
+        adapter_only = self.training_config.get(
+            "save_object_availability_adapter_only", False)
+        if adapter_only and self.distribution_framework == "fsdp":
+            raise NotImplementedError(
+                "Adapter-only checkpoint saving is not implemented for FSDP")
+
+        if adapter_only and self.should_save:
+            model_state_dict = {
+                key: value.detach().cpu()
+                for key, value in
+                CrossviewTemporalSD.get_object_availability_adapter_state(
+                    self.model.state_dict()).items()
+            }
+        elif torch.distributed.is_initialized():
             # model is fully saved by rank0 for compatibility
             options = torch.distributed.checkpoint.state_dict.StateDictOptions(
                 full_state_dict=True, cpu_offload=True)
@@ -1434,9 +1524,18 @@ class CrossviewTemporalSD():
                         (sd_pred_latent.shape[1] - pre)
                     roi = torch.cat(
                         [roi[:, :pre], roi[:, pre::stride]], dim=1)
-                roi = torch.nn.functional.interpolate(
-                    roi.reshape(-1, 1, *roi.shape[-2:]),
-                    size=sd_pred_latent.shape[-2:], mode="nearest")
+                roi = roi.reshape(-1, 1, *roi.shape[-2:])
+                target_size = sd_pred_latent.shape[-2:]
+                # A projected object may occupy fewer than one latent-cell
+                # stride.  Nearest-neighbor downsampling can then erase the
+                # ROI completely, silently removing its weighted supervision.
+                # Max pooling conservatively keeps every covered latent cell.
+                if all(i >= j for i, j in zip(roi.shape[-2:], target_size)):
+                    roi = torch.nn.functional.adaptive_max_pool2d(
+                        roi, output_size=target_size)
+                else:
+                    roi = torch.nn.functional.interpolate(
+                        roi, size=target_size, mode="nearest")
                 roi = roi.view(*sd_pred_latent.shape[:3], 1,
                                *sd_pred_latent.shape[-2:])
                 weights = 1.0 + float(roi_weight) * roi
@@ -1448,6 +1547,24 @@ class CrossviewTemporalSD():
                 loss_value = torch.nn.functional.mse_loss(
                     sd_pred_latent.float(), target.float(), reduction="mean")
             loss_dict["sd_loss"] = loss_value * self.get_loss_coef("sd")
+
+        projection_l2_weight = float(self.training_config.get(
+            "object_availability_projection_l2_weight", 0.0))
+        if projection_l2_weight > 0:
+            availability_adapter = getattr(
+                self.model, "object_availability_adapter", None)
+            if availability_adapter is None:
+                raise ValueError(
+                    "object_availability_projection_l2_weight requires an "
+                    "object availability adapter")
+            projection_parameters = list(
+                availability_adapter.residual_projections.parameters())
+            projection_l2 = torch.stack([
+                parameter.float().square().sum()
+                for parameter in projection_parameters
+            ]).sum()
+            loss_dict["object_availability_projection_l2"] = \
+                projection_l2_weight * projection_l2
 
         if len(sd_pred) > 1:
             depth_features = sd_pred[1]

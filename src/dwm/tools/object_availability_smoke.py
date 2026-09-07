@@ -13,6 +13,7 @@ import numpy as np
 from PIL import Image
 import torch
 
+import dwm.datasets.common
 from dwm.datasets.availability import ObjectAvailabilityDataset
 from dwm.datasets.nuscenes import MotionDataset
 from dwm.fs.dirfs import DirFileSystem
@@ -27,11 +28,13 @@ CAMERAS = (
     "CAM_BACK_RIGHT", "CAM_BACK", "CAM_BACK_LEFT")
 MODEL_OBJECT_KEYS = (
     "object_class_ids", "object_box_states", "object_availability",
-    "object_slot_mask", "object_source_frame_indices")
+    "object_slot_mask", "object_source_frame_indices",
+    "object_spatial_prior")
 CONTROLLED_KEYS = {
     "3dbox_images", "loss_target_roi", "object_class_ids",
     "object_box_states", "object_availability", "object_slot_mask",
-    "object_source_frame_indices", "object_state_codes",
+    "object_source_frame_indices", "object_spatial_prior",
+    "object_state_codes",
     "object_track_hash", "object_availability_mode_id",
     "object_missing_interval", "object_pair_seed",
 }
@@ -341,19 +344,38 @@ def main():
         if parameter.requires_grad)
 
     source = unavailable["object_source_frame_indices"][start:stop, 0]
+    segment = wrapper._segment(selected_index)
+    annotations = wrapper._frame_annotations(segment)
+    reference_world_from_ego = dwm.datasets.common.get_transform(
+        segment[0][0]["rotation"], segment[0][0]["translation"])
+    reference_from_world = np.linalg.inv(reference_world_from_ego)
+    expected_missing_boxes = torch.stack([
+        wrapper._normalized_box_state(
+            wrapper._causal_missing_annotation(
+                annotations, record["target_instance_token"], start, frame),
+            reference_from_world)
+        for frame in range(start, stop)
+    ]).unsqueeze(1)
     leakage_assertions = {
         "unavailable_uses_strictly_past_source": bool(torch.all(
             source < torch.arange(start, stop))),
         "unavailable_source_is_last_observed": bool(torch.all(source == start - 1)),
-        "unavailable_box_is_frozen_last_observation": bool(torch.equal(
+        "unavailable_box_is_causal_extrapolation": bool(torch.equal(
             unavailable["object_box_states"][start:stop],
-            unavailable["object_box_states"][start - 1:start].expand(
-                stop - start, -1, -1))),
+            expected_missing_boxes)),
         "absent_slot_removed": bool(torch.all(
             ~absent["object_slot_mask"][start:stop])),
         "absent_source_removed": bool(torch.all(
             absent["object_source_frame_indices"][start:stop] == -1)),
+        "clean_spatial_prior_empty": bool(
+            torch.count_nonzero(clean["object_spatial_prior"]) == 0),
+        "absent_spatial_prior_empty": bool(
+            torch.count_nonzero(absent["object_spatial_prior"]) == 0),
+        "unavailable_spatial_prior_nonempty": bool(torch.count_nonzero(
+            unavailable["object_spatial_prior"][start:stop]) > 0),
         "roi_not_in_model_kwargs": "loss_target_roi" not in MODEL_OBJECT_KEYS,
+        "spatial_prior_is_model_input":
+            "object_spatial_prior" in MODEL_OBJECT_KEYS,
         "velocity_not_available_or_used": "object_velocities" not in unavailable,
     }
     if not all(leakage_assertions.values()):
@@ -368,6 +390,7 @@ def main():
             "min_observed_before": 3,
             "min_observed_after": 2,
             "velocity_input": False,
+            "motion_prior": "constant_velocity_from_last_two_observations",
         },
     }
     report = {

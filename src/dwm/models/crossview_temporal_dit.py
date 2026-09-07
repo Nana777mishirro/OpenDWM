@@ -393,6 +393,7 @@ class DiTCrossviewTemporalConditionModel(diffusers.SD3Transformer2DModel):
         object_slot_mask: torch.Tensor = None,
         object_velocities: torch.Tensor = None,
         object_source_frame_indices: torch.Tensor = None,
+        object_spatial_prior: torch.Tensor = None,
         disable_crossview: torch.BoolTensor = None,
         disable_temporal: torch.BoolTensor = None,
         crossview_attention_mask: torch.Tensor = None,
@@ -527,6 +528,9 @@ class DiTCrossviewTemporalConditionModel(diffusers.SD3Transformer2DModel):
                     layer_index=i,
                     velocities=object_velocities,
                     source_frame_indices=object_source_frame_indices,
+                    spatial_prior=object_spatial_prior,
+                    spatial_height=height,
+                    spatial_width=width,
                 )
                 hidden_states = hidden_states + object_residual
 

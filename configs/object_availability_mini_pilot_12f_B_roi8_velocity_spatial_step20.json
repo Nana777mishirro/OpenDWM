@@ -1,0 +1,662 @@
+{
+  "device": "cuda",
+  "ddp_backend": "nccl",
+  "train_epochs": 1,
+  "generator_seed": 0,
+  "data_shuffle": false,
+  "global_state": {
+    "nuscenes_fs": {
+      "_class_name": "dwm.fs.dirfs.DirFileSystem",
+      "path": "/root/autodl-tmp/jttian-opendwm/datasets/nuscenes-mini"
+    }
+  },
+  "optimizer": {
+    "_class_name": "torch.optim.AdamW",
+    "lr": 0.0001
+  },
+  "pipeline": {
+    "_class_name": "dwm.pipelines.ctsd.CrossviewTemporalSD",
+    "common_config": {
+      "frame_prediction_style": "ctsd",
+      "cat_condition": true,
+      "cond_with_action": false,
+      "condition_on_all_frames": true,
+      "added_time_ids": "fps_camera_transforms",
+      "camera_intrinsic_embedding_indices": [
+        0,
+        4,
+        2,
+        5
+      ],
+      "camera_intrinsic_denom_embedding_indices": [
+        1,
+        1,
+        0,
+        1
+      ],
+      "camera_transform_embedding_indices": [
+        2,
+        6,
+        10,
+        3,
+        7,
+        11
+      ],
+      "distribution_framework": "ddp",
+      "text_encoder_load_args": {
+        "variant": "fp16",
+        "torch_dtype": {
+          "_class_name": "get_class",
+          "class_name": "torch.float16"
+        }
+      },
+      "memory_efficient_batch": 6,
+      "object_availability_enabled": true,
+      "autocast": {
+        "device_type": "cuda",
+        "dtype": {
+          "_class_name": "get_class",
+          "class_name": "torch.float16"
+        }
+      },
+      "print_load_state_info": true
+    },
+    "training_config": {
+      "text_prompt_condition_ratio": 1.0,
+      "3dbox_condition_ratio": 1.0,
+      "hdmap_condition_ratio": 1.0,
+      "reference_frame_count": 3,
+      "generation_task_ratio": 0.0,
+      "image_generation_ratio": 0.0,
+      "all_reference_visible_ratio": 1.0,
+      "enable_grad_scaler": false,
+      "train_object_availability_adapter_only": true,
+      "target_roi_loss_weight": 8.0,
+      "gradient_accumulation_steps": 2
+    },
+    "inference_config": {
+      "guidance_scale": 4,
+      "inference_steps": 40,
+      "preview_image_size": [
+        448,
+        252
+      ],
+      "sequence_length_per_iteration": 19,
+      "reference_frame_count": 3,
+      "autoregression_data_exception_for_take_sequence": [
+        "crossview_mask"
+      ],
+      "evaluation_item_count": 144
+    },
+    "model": {
+      "_class_name": "dwm.models.crossview_temporal_dit.DiTCrossviewTemporalConditionModel",
+      "dual_attention_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "attention_head_dim": 64,
+      "caption_projection_dim": 1536,
+      "in_channels": 16,
+      "joint_attention_dim": 4096,
+      "num_attention_heads": 24,
+      "num_layers": 24,
+      "out_channels": 16,
+      "patch_size": 2,
+      "pooled_projection_dim": 2048,
+      "pos_embed_max_size": 384,
+      "qk_norm": "rms_norm",
+      "qk_norm_on_additional_modules": "rms_norm",
+      "sample_size": 128,
+      "perspective_modeling_type": "implicit",
+      "projection_class_embeddings_input_dim": 2816,
+      "enable_crossview": true,
+      "crossview_attention_type": "rowwise",
+      "crossview_block_layers": [
+        1,
+        5,
+        9,
+        13,
+        17,
+        21
+      ],
+      "crossview_gradient_checkpointing": true,
+      "enable_temporal": true,
+      "temporal_attention_type": "rowwise",
+      "temporal_block_layers": [
+        2,
+        3,
+        6,
+        7,
+        10,
+        11,
+        14,
+        15,
+        18,
+        19,
+        22,
+        23
+      ],
+      "temporal_gradient_checkpointing": true,
+      "mixer_type": "AlphaBlender",
+      "merge_factor": 2,
+      "condition_image_adapter_config": {
+        "in_channels": 6,
+        "channels": [
+          1536,
+          1536,
+          1536,
+          1536,
+          1536,
+          1536
+        ],
+        "is_downblocks": [
+          true,
+          false,
+          false,
+          false,
+          false,
+          false
+        ],
+        "num_res_blocks": 2,
+        "downscale_factor": 8,
+        "use_zero_convs": true
+      },
+      "object_availability_adapter_config": {
+        "num_classes": 12,
+        "box_dim": 10,
+        "class_embedding_dim": 32,
+        "slot_dim": 256,
+        "injection_layers": [
+          0
+        ],
+        "inject_on_observed": false,
+        "use_spatial_prior": true,
+        "use_velocity": false,
+        "validate_inputs": true,
+        "spatial_prior_dilation_tokens": 1
+      }
+    },
+    "pretrained_model_name_or_path": "/root/autodl-tmp/jttian-opendwm/models/sd35-medium",
+    "model_checkpoint_path": "/root/autodl-tmp/jttian-opendwm/ckpts/ctsd_35_tirda_bm_nwao_40k.pth",
+    "model_load_state_args": {
+      "strict": false
+    },
+    "metrics": {}
+  },
+  "training_dataset": {
+    "_class_name": "dwm.datasets.common.DatasetAdapter",
+    "base_dataset": {
+      "_class_name": "dwm.datasets.availability.ObjectAvailabilityDataset",
+      "base_dataset": {
+        "_class_name": "dwm.datasets.nuscenes.MotionDataset",
+        "fs": {
+          "_class_name": "dwm.common.get_state",
+          "key": "nuscenes_fs"
+        },
+        "dataset_name": "v1.0-mini",
+        "split": "mini_train",
+        "sequence_length": 12,
+        "fps_stride_tuples": [
+          [
+            0,
+            1
+          ]
+        ],
+        "sensor_channels": [
+          "CAM_FRONT_LEFT",
+          "CAM_FRONT",
+          "CAM_FRONT_RIGHT",
+          "CAM_BACK_RIGHT",
+          "CAM_BACK",
+          "CAM_BACK_LEFT"
+        ],
+        "keyframe_only": true,
+        "enable_camera_transforms": true,
+        "_3dbox_image_settings": {
+          "color_table": {
+            "vehicle.car": [
+              0,
+              0,
+              255
+            ],
+            "vehicle.bus": [
+              128,
+              0,
+              255
+            ],
+            "vehicle.truck": [
+              255,
+              255,
+              0
+            ],
+            "vehicle.construction": [
+              128,
+              128,
+              255
+            ],
+            "vehicle.emergency": [
+              255,
+              128,
+              128
+            ],
+            "vehicle.trailer": [
+              255,
+              255,
+              255
+            ],
+            "vehicle.bicycle": [
+              128,
+              255,
+              0
+            ],
+            "vehicle.motorcycle": [
+              0,
+              255,
+              128
+            ],
+            "human.pedestrian": [
+              255,
+              0,
+              0
+            ],
+            "movable_object.barrier": [
+              64,
+              64,
+              64
+            ],
+            "movable_object.trafficcone": [
+              128,
+              128,
+              0
+            ]
+          }
+        },
+        "hdmap_image_settings": {},
+        "stub_key_data_dict": {
+          "crossview_mask": [
+            "content",
+            {
+              "_class_name": "torch.tensor",
+              "data": {
+                "_class_name": "json.loads",
+                "s": "[[1,1,0,0,0,1],[1,1,1,0,0,0],[0,1,1,1,0,0],[0,0,1,1,1,0],[0,0,0,1,1,1],[1,0,0,0,1,1]]"
+              },
+              "dtype": {
+                "_class_name": "get_class",
+                "class_name": "torch.bool"
+              }
+            }
+          ]
+        },
+        "enable_synchronization_check": false,
+        "enable_scene_description": true
+      },
+      "mode_weights": {
+        "clean": 0.25,
+        "temporary_unavailable": 0.75,
+        "explicit_absent": 0.0
+      },
+      "missing_durations": [
+        1,
+        3,
+        5,
+        7
+      ],
+      "min_observed_before": 3,
+      "min_observed_after": 2,
+      "seed": 0,
+      "roi_size": [
+        128,
+        224
+      ],
+      "strict": true,
+      "debug_assertions": true,
+      "mode": "temporary_unavailable",
+      "manifest_path": "/root/autodl-tmp/jttian-opendwm/output/mini-pilot/manifest_train_64.json"
+    },
+    "transform_list": [
+      {
+        "old_key": "images",
+        "new_key": "vae_images",
+        "transform": {
+          "_class_name": "torchvision.transforms.Compose",
+          "transforms": [
+            {
+              "_class_name": "torchvision.transforms.Resize",
+              "size": [
+                128,
+                224
+              ]
+            },
+            {
+              "_class_name": "torchvision.transforms.ToTensor"
+            }
+          ]
+        }
+      },
+      {
+        "old_key": "3dbox_images",
+        "new_key": "3dbox_images",
+        "transform": {
+          "_class_name": "torchvision.transforms.Compose",
+          "transforms": [
+            {
+              "_class_name": "torchvision.transforms.Resize",
+              "size": [
+                128,
+                224
+              ]
+            },
+            {
+              "_class_name": "torchvision.transforms.ToTensor"
+            }
+          ]
+        }
+      },
+      {
+        "old_key": "hdmap_images",
+        "new_key": "hdmap_images",
+        "transform": {
+          "_class_name": "torchvision.transforms.Compose",
+          "transforms": [
+            {
+              "_class_name": "torchvision.transforms.Resize",
+              "size": [
+                128,
+                224
+              ]
+            },
+            {
+              "_class_name": "torchvision.transforms.ToTensor"
+            }
+          ]
+        }
+      },
+      {
+        "old_key": "scene_description",
+        "new_key": "clip_text",
+        "transform": {
+          "_class_name": "dwm.datasets.common.Copy"
+        },
+        "stack": false
+      }
+    ],
+    "pop_list": [
+      "images",
+      "scene_description"
+    ]
+  },
+  "validation_dataset": {
+    "_class_name": "dwm.datasets.common.DatasetAdapter",
+    "base_dataset": {
+      "_class_name": "dwm.datasets.availability.ObjectAvailabilityDataset",
+      "base_dataset": {
+        "_class_name": "dwm.datasets.nuscenes.MotionDataset",
+        "fs": {
+          "_class_name": "dwm.common.get_state",
+          "key": "nuscenes_fs"
+        },
+        "dataset_name": "v1.0-mini",
+        "split": "mini_val",
+        "sequence_length": 12,
+        "fps_stride_tuples": [
+          [
+            0,
+            1
+          ]
+        ],
+        "sensor_channels": [
+          "CAM_FRONT_LEFT",
+          "CAM_FRONT",
+          "CAM_FRONT_RIGHT",
+          "CAM_BACK_RIGHT",
+          "CAM_BACK",
+          "CAM_BACK_LEFT"
+        ],
+        "keyframe_only": true,
+        "enable_synchronization_check": false,
+        "enable_camera_transforms": true,
+        "_3dbox_image_settings": {
+          "color_table": {
+            "vehicle.car": [
+              0,
+              0,
+              255
+            ],
+            "vehicle.bus": [
+              128,
+              0,
+              255
+            ],
+            "vehicle.truck": [
+              255,
+              255,
+              0
+            ],
+            "vehicle.construction": [
+              128,
+              128,
+              255
+            ],
+            "vehicle.emergency": [
+              255,
+              128,
+              128
+            ],
+            "vehicle.trailer": [
+              255,
+              255,
+              255
+            ],
+            "vehicle.bicycle": [
+              128,
+              255,
+              0
+            ],
+            "vehicle.motorcycle": [
+              0,
+              255,
+              128
+            ],
+            "human.pedestrian": [
+              255,
+              0,
+              0
+            ],
+            "movable_object.barrier": [
+              64,
+              64,
+              64
+            ],
+            "movable_object.trafficcone": [
+              128,
+              128,
+              0
+            ]
+          }
+        },
+        "hdmap_image_settings": {},
+        "stub_key_data_dict": {
+          "crossview_mask": [
+            "content",
+            {
+              "_class_name": "torch.tensor",
+              "data": {
+                "_class_name": "json.loads",
+                "s": "[[1,1,0,0,0,1],[1,1,1,0,0,0],[0,1,1,1,0,0],[0,0,1,1,1,0],[0,0,0,1,1,1],[1,0,0,0,1,1]]"
+              },
+              "dtype": {
+                "_class_name": "get_class",
+                "class_name": "torch.bool"
+              }
+            }
+          ]
+        },
+        "enable_scene_description": true
+      },
+      "mode_weights": {
+        "clean": 0.5,
+        "temporary_unavailable": 0.4,
+        "explicit_absent": 0.1
+      },
+      "missing_durations": [
+        1,
+        3,
+        5,
+        7
+      ],
+      "min_observed_before": 3,
+      "min_observed_after": 2,
+      "seed": 0,
+      "roi_size": [
+        128,
+        224
+      ],
+      "strict": true,
+      "debug_assertions": true,
+      "mode": "temporary_unavailable",
+      "manifest_path": "/root/autodl-tmp/jttian-opendwm/output/mini-pilot/manifest_val_4.json"
+    },
+    "transform_list": [
+      {
+        "old_key": "images",
+        "new_key": "vae_images",
+        "transform": {
+          "_class_name": "torchvision.transforms.Compose",
+          "transforms": [
+            {
+              "_class_name": "torchvision.transforms.Resize",
+              "size": [
+                128,
+                224
+              ]
+            },
+            {
+              "_class_name": "torchvision.transforms.ToTensor"
+            }
+          ]
+        }
+      },
+      {
+        "old_key": "3dbox_images",
+        "new_key": "3dbox_images",
+        "transform": {
+          "_class_name": "torchvision.transforms.Compose",
+          "transforms": [
+            {
+              "_class_name": "torchvision.transforms.Resize",
+              "size": [
+                128,
+                224
+              ]
+            },
+            {
+              "_class_name": "torchvision.transforms.ToTensor"
+            }
+          ]
+        }
+      },
+      {
+        "old_key": "hdmap_images",
+        "new_key": "hdmap_images",
+        "transform": {
+          "_class_name": "torchvision.transforms.Compose",
+          "transforms": [
+            {
+              "_class_name": "torchvision.transforms.Resize",
+              "size": [
+                128,
+                224
+              ]
+            },
+            {
+              "_class_name": "torchvision.transforms.ToTensor"
+            }
+          ]
+        }
+      },
+      {
+        "old_key": "scene_description",
+        "new_key": "clip_text",
+        "transform": {
+          "_class_name": "dwm.datasets.common.Copy"
+        },
+        "stack": false
+      }
+    ],
+    "pop_list": [
+      "images",
+      "scene_description"
+    ]
+  },
+  "training_dataloader": {
+    "batch_size": 1,
+    "num_workers": 0,
+    "collate_fn": {
+      "_class_name": "dwm.datasets.common.CollateFnIgnoring",
+      "keys": [
+        "clip_text"
+      ]
+    }
+  },
+  "validation_dataloader": {
+    "batch_size": 1,
+    "num_workers": 0,
+    "collate_fn": {
+      "_class_name": "dwm.datasets.common.CollateFnIgnoring",
+      "keys": [
+        "clip_text"
+      ]
+    }
+  },
+  "informations": {
+    "fid": 22.84,
+    "fvd": 252.7,
+    "total_batch_sizes": 32,
+    "steps": 5000
+  },
+  "output_path": "/root/autodl-tmp/jttian-opendwm/output/mini-pilot-b-roi8-velocity-spatial-step20",
+  "availability_experiment": {
+    "mode": "temporary_unavailable_velocity_spatial_prior",
+    "validation_mode": "temporary_unavailable",
+    "manifest": null,
+    "validation_manifest": null,
+    "semantic_contract": {
+      "clean": "current box observed; persistent slot active",
+      "temporary_unavailable": "target absent from raster; slot active with causally extrapolated state from the last two observations",
+      "explicit_absent": "target absent from raster; slot removed/reset"
+    },
+    "full_smoke": {
+      "single_process": true,
+      "batch_size": 1,
+      "sequence_length": 12,
+      "image_size": [
+        128,
+        224
+      ],
+      "missing_durations": [
+        1,
+        3,
+        5,
+        7
+      ],
+      "optimizer_step": false,
+      "raw_dataset": "v1.0-mini",
+      "training_split": "mini_train",
+      "validation_split": "mini_val"
+    },
+    "motion_model": "constant_velocity_from_last_two_observed_frames",
+    "spatial_prior_dilation_tokens": 1
+  }
+}
